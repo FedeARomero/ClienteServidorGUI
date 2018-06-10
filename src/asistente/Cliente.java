@@ -1,26 +1,38 @@
 package asistente;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Observable;
+import java.util.Observer;
 import java.util.Scanner;
 
-public class Cliente {
+public class Cliente implements Observer {
 	
+	private List<Thread> listaThreads = new LinkedList<>();
 	private Socket socketCliente;
+	private String ip;
 	private int puerto;
-	private ClienteGUI ventana;
+	@SuppressWarnings("unused")
+	private ClienteLoginGUI login;
+	private ClienteGUI chat;
 	private boolean mensajesALeer;
+	private String usuario;
+	@SuppressWarnings("unused")
+	private String password;
 	
-	public Cliente(int puerto) {
+	public Cliente(String ip, int puerto) {
+		this.ip = ip;
 		this.puerto = puerto;
-		this.ventana = new ClienteGUI(this);
 		this.mensajesALeer = false;
+		this.login = new ClienteLoginGUI(this);
 	}
 	
 	public void notificar() {
-		System.out.println("notificado");
 		this.mensajesALeer = true;
 	}
 	
@@ -28,28 +40,51 @@ public class Cliente {
 		return this.mensajesALeer;
 	}
 	
+	public String getUsuario() {
+		return this.usuario;
+	}
+
+	private void Salir() {
+		for(Thread t : listaThreads) 
+			t.interrupt();
+	}
+	
+	@Override
+	public void update(Observable arg0, Object arg1) {
+		String[] datos = ((String)arg1).split(" ");
+		//System.out.println(datos[0] + " - " + datos[1]);
+		this.usuario = datos[0];
+		this.password = datos[1];
+		
+		this.chat = new ClienteGUI(this, this.usuario);
+		
+		//Conecto los clientes al servidor
+		Thread cl_con = new Thread(this.new Conectar());
+		cl_con.start();
+	}
+		
 	public class Conectar implements Runnable {
 
 		@Override
 		public void run() {
 			try {
-			//System.out.println("Cliente creado");
-			//Me conecto al cliente, usando el localhost:puertoSV
-			socketCliente = new Socket("127.0.0.1", puerto);
-			
-			//En cada cliente creo e inicio un thread para escribir al sv
-			Scanner sc = new Scanner(System.in);
-			Escribir esc = new Escribir(socketCliente, Thread.currentThread().getName(), sc);
-			Thread esc_thread = new Thread(esc);
-			esc_thread.start();
-			
-			//En cada cliente creo e inicio un thread para leer lo que viene del sv
-			Leer leer = new Leer(socketCliente);
-			Thread leer_thread = new Thread(leer);
-			leer_thread.start();
-			
+				//System.out.println("Cliente creado");
+				//Me conecto al cliente, usando el localhost:puertoSV
+				socketCliente = new Socket(ip, puerto);
+				
+				//En cada cliente creo e inicio un thread para escribir al sv
+				Escribir esc = new Escribir(socketCliente, usuario);
+				Thread esc_thread = new Thread(esc);
+				listaThreads.add(esc_thread);
+				esc_thread.start();
+				
+				//En cada cliente creo e inicio un thread para leer lo que viene del sv
+				Leer leer = new Leer(socketCliente);
+				Thread leer_thread = new Thread(leer);
+				listaThreads.add(leer_thread);
+				leer_thread.start();
 			} catch(IOException e) {
-				System.out.println("Error al conectar al servidor y/o inicializar los threads");
+				chat.imprimir("Error al conectar al servidor y/o inicializar los threads");
 			}
 		}
 	}
@@ -71,32 +106,28 @@ public class Cliente {
 					try {
 						msj = (String) in.readObject();
 					} catch (IOException | ClassNotFoundException e) {
-						System.out.println("Error al leer. Puede que el cliente se haya desconectado");
+						chat.imprimir("Error al leer. Puede que el cliente se haya desconectado");
 					}
 				} 
 				
-				if(!msj.equals("Salir")) {
-					ventana.imprimir(msj);
-//
-//					try {
-//						Thread.sleep(1000);
-//					} catch (InterruptedException e) { }
-				} else {
+				if(!msj.equals("Salir")) 
+					chat.imprimir(msj);
+				else 
 					in = null;
-				}
-			} while(in != null);
+			} while(in != null && !Thread.interrupted());
 		}
 	}
 
 	public class Escribir implements Runnable {
 
 		private ObjectOutputStream out;
+		private String usuario;
 		//private Scanner teclado;
 		
-		Escribir(Socket socketCliente, String nombreThread, Scanner sc) throws IOException {
+		Escribir(Socket socketCliente, String usuario) throws IOException {
 			//Inicializo el flujo de salida del socket
 			out = new ObjectOutputStream(socketCliente.getOutputStream());
-			//teclado = sc;
+			this.usuario = usuario;
 		}
 		
 		@Override
@@ -105,48 +136,40 @@ public class Cliente {
 			String str = null;
 			
 			do {
-				//System.out.println(mensajeDisponible());
 				if(mensajeDisponible() == true) {
-					System.out.println("TRUE");
-					str = ventana.getMensaje();
-					System.out.println(str);
+					str = "Mensaje de " + this.usuario + ": " + chat.getMensaje();
 					mensajesALeer = false;
 					
 					try {
-						//System.out.println("Escribiendo al sv");
 						out.writeObject(str);
 						out.flush();
 					} catch (IOException e) {
-						System.out.println("Error al escribir en el servidor");
+						chat.imprimir("Error al escribir en el servidor");
 					}
 				}
-				//System.out.println();
-//				if(!str.equals("Salir"))
-//					str = nombre + " - " + str;
-
 				
 				try {
 					Thread.sleep(100);
 				} catch (InterruptedException e) {
 					e.printStackTrace();
 				}
-			} while(str == null || !str.equals("Salir"));
-			//teclado.close();
+			} while((str == null || !str.equals("Salir")) && !Thread.interrupted());
 		}
 	}
 	
 	public static void main(String[] args) throws IOException {
 		
-		//Creo los clientes
-		Cliente cl1 = new Cliente(10001);
-		//Cliente cl2 = new Cliente(10001);
+		Scanner sc = new Scanner(new File("config/configc.txt"));
 		
+		//Creo los clientes
+		Cliente cl1 = new Cliente(sc.nextLine(), Integer.parseInt(sc.nextLine()));
+		
+		/*
 		//Conecto los clientes al servidor
 		Thread cl1_con = new Thread(cl1.new Conectar());
-		cl1_con.start();
+		cl1_con.start();*/
 		
-//		Thread cl2_con = new Thread(cl2.new Conectar());
-//		cl2_con.setName("CL2");
-//		cl2_con.start();
+		sc.close();
 	}
+
 }

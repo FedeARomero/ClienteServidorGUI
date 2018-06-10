@@ -2,7 +2,6 @@ package asistente;
 
 import javax.swing.JFrame;
 import javax.swing.JScrollPane;
-
 import java.awt.Font;
 import javax.swing.JTextField;
 import javax.swing.JTextPane;
@@ -11,13 +10,14 @@ import javax.swing.text.Document;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import java.awt.event.ActionListener;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.awt.event.ActionEvent;
 
 public class ClienteGUI {
 
 	private JFrame frame;
 	private JTextPane mensajesChat;
-	private JScrollPane barraScroll;
 	private JTextField escribir;
 	private Cliente motor;
 	
@@ -43,19 +43,19 @@ public class ClienteGUI {
 	 * Create the application.
 	 * 
 	 */
-	public ClienteGUI(Cliente motor) {
+	public ClienteGUI(Cliente motor, String usuario) {
 		this.motor = motor;
-		initialize();
+		initialize(usuario);
 	}
 
 	/**
 	 * Initialize the contents of the frame.
 	 *
 	 */
-	private void initialize() {
+	private void initialize(String usuario) {
 		
-		frame = new JFrame();
-		frame.setBounds(100, 100, 1000, 700);
+		frame = new JFrame(usuario);
+		frame.setBounds(100, 100, 1150, 700);
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		frame.getContentPane().setLayout(null);
 		frame.setResizable(false); 							//desactivo el maximizar
@@ -64,11 +64,10 @@ public class ClienteGUI {
 		mensajesChat.setEditable(false);
 		mensajesChat.setFont(new Font("Tahoma", Font.PLAIN, 15));
 		mensajesChat.setBounds(12, 13, 970, 604);
-		mensajesChat.insertIcon(new ImageIcon("C:\\Users\\Daniel\\Desktop\\ff.png"));
+		//imprimirImagen("https://img-9gag-fun.9cache.com/photo/ajEK67p_460s.jpg");
 		
-		barraScroll = new JScrollPane(mensajesChat);
+		JScrollPane barraScroll = new JScrollPane(mensajesChat);
 		barraScroll.setBounds(12, 13, 970, 604);
-		
 		frame.getContentPane().add(barraScroll);
 		
 		escribir = new JTextField();
@@ -106,8 +105,25 @@ public class ClienteGUI {
 	
 	public String getMensaje() {
 		String msj = escribir.getText();
+		imprimir(msj);
 		escribir.setText("");
 		
 		return msj;
+	}
+	
+	public void imprimirImagen(String link) {
+		mensajesChat.insertIcon(getImagen(link));
+	}
+	
+	private ImageIcon getImagen(String link) {
+		ImageIcon img = null;
+		
+		try {
+			img = new ImageIcon(new URL(link));
+		} catch (MalformedURLException e) {
+			e.printStackTrace();
+		}
+		
+		return img;
 	}
 }

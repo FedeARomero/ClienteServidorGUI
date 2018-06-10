@@ -1,50 +1,82 @@
 package asistente;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Observable;
+import java.util.Observer;
+import java.util.Scanner;
 
-public class Server {
+public class Server implements Observer {
 
+	private List<Thread> listaThreads = new LinkedList<>();
 	private HashMap<Socket,ObjectOutputStream> listaClientes;	//Lista de sockets de los clientes
 	private ServerSocket listener;	//Socket del sv para escuchar a los nuevos clientes
 	private ObjectOutputStream out;
 	private ObjectInputStream in;
-	private int idCliente;
+	private ServerGUI gui;
 	
 	public Server(int puerto) throws IOException {
-		listaClientes = new HashMap<Socket,ObjectOutputStream>();
-		listener = new ServerSocket(puerto);
-		idCliente = 1;
+		this.listaClientes = new HashMap<Socket,ObjectOutputStream>();
+		this.listener = new ServerSocket(puerto);
+		this.gui = new ServerGUI(this);
+	}
+	
+	@Override
+	public void update(Observable o, Object arg) {				// Evento 1 = conectar, Evento 2 = desconectar
+		if((Integer)arg == 1) {
+			Thread ts = new Thread(this.new Escuchar());
+			listaThreads.add(ts);
+			ts.start();
+		} else {
+			gui.imprimirEvento("Desconectando servidor");
+			
+			try {
+				listener.close();
+			} catch (IOException e1) {
+				gui.imprimirEvento("Error al desconectar el socket listener");
+			}
+			
+			for(Socket s : listaClientes.keySet()) {
+				try {
+					listaClientes.get(s).writeObject("Salir");
+				} catch (IOException e) {
+					gui.imprimirEvento("Error al desconectar al cliente");
+				}
+			}
+			
+			for(Thread t : listaThreads)
+				t.interrupt();
+		}
 	}
 	
 	public class Escuchar implements Runnable {
 		
 		@Override
-		public void run() {
-			System.out.println("SERVIDOR CREADO EN EL PUERTO " + listener.getLocalPort());
+		public void run() {	
+			gui.imprimirEvento("SERVIDOR CREADO EN EL PUERTO " + listener.getLocalPort());
 			try {
-				for(int i=0; i<2; i++) {
+				while(true) {
 					Socket socketCliente = listener.accept(); 
-					System.out.println("Conexion de " + socketCliente.getInetAddress() + ":" + socketCliente.getPort());
+					gui.imprimirEvento("Conexion de " + socketCliente.getInetAddress() + ":" + socketCliente.getPort());
 					in = new ObjectInputStream(socketCliente.getInputStream());	//Inicializo flujo para leer data del cliente
 					out = new ObjectOutputStream(socketCliente.getOutputStream());	//Inicializo flujo para escribir data al cliente
 					listaClientes.put(socketCliente, out);	//Al cliente aceptado lo agrego en el hashmap
 					
 					//Thread para leer al cliente (uno por cada cliente)
-					LeerCliente lc_thread = new LeerCliente(socketCliente, in, out, idCliente);
+					LeerCliente lc_thread = new LeerCliente(socketCliente, in, out);
 					Thread leer = new Thread(lc_thread);
+					listaThreads.add(leer);
 					leer.start();
-					out.writeObject("CLIENTE " + idCliente);
-					idCliente++;
 				}
-				
-				listener.close();
 			} catch (IOException e) {
-				e.printStackTrace();
+				gui.imprimirEvento(e.getMessage());
 			}
 		}
 	}
@@ -55,14 +87,13 @@ public class Server {
 		private ObjectInputStream in;			
 		private ObjectOutputStream out;	
 		private String str;
-		private int id;
+		private boolean salir;
 		
-		LeerCliente(Socket cliente, ObjectInputStream in, ObjectOutputStream out, int idCliente) throws IOException {
-			//in = new ObjectInputStream(cliente.getInputStream());
+		LeerCliente(Socket cliente, ObjectInputStream in, ObjectOutputStream out) throws IOException {
 			this.in = in;
 			this.out = out;
-			socketCliente = cliente;
-			id = idCliente;
+			this.socketCliente = cliente;
+			this.salir = false;
 		}
 		
 		@Override
@@ -71,56 +102,53 @@ public class Server {
 				try {
 					str = (String) in.readObject();
 				} catch (IOException | ClassNotFoundException e) {
-					System.out.println("Error al leer");
+					salir = true;
 				}
-					
-				if(!str.equals("Salir")) {
-					str = "Mensaje del cliente " + id + ": " + str;
-					System.out.println(str);
-					
+				
+				if(salir == false) {
 					for(Socket cliente : listaClientes.keySet()) {
 						if(cliente != socketCliente) {
 							try {
 								listaClientes.get(cliente).writeObject(str);
 							} catch (IOException e) {
-								System.out.println("Error al reenviar el mensaje al resto de los clientes");
+								gui.imprimirEvento("Error al reenviar el mensaje al resto de los clientes");
 							}
 						}
 					}
-//					try {
-//						Thread.sleep(1000);
-//					} catch (InterruptedException e) {
-//						e.printStackTrace();
-//					}
 				} else {
-					System.out.println("Desconectando cliente");
-					
 					try {
-						out.writeObject(str);
-					} catch (IOException e1) {
-						System.out.println("Error al notificar al cliente");
+						salir = str.equals("Salir");
+					} catch (Exception e) {
+						try {
+							if(salir == true) {
+								in.close();
+								out.close();
+								socketCliente.close();
+								listaClientes.remove(socketCliente);
+								return;
+							}
+						} catch (Exception e2) {
+							gui.imprimirEvento("Error al cerrar el socket y los flujos");
+							return;
+						}
 					}
-					
-					try {
-						in.close();
-						out.close();
-						socketCliente.close();
-					} catch (IOException e) {
-						System.out.println("Error al cerrar el socket y los flujos");
-					}
-					listaClientes.remove(socketCliente);
 				}
-			} while(!str.equals("Salir"));
+			} while(salir == false && !Thread.interrupted());
 		}
 	}
 	
 	public static void main(String[] args) throws IOException {
 		
+		Scanner sc = new Scanner(new File("config/configs.txt"));
+		
 		//Inicio el servidor
-		Server servidor = new Server(10001);
-		Thread ts = new Thread(servidor.new Escuchar());
-		ts.start();
+		Server servidor = new Server(Integer.parseInt(sc.nextLine()));
+//		Thread ts = new Thread(servidor.new Escuchar());
+//		ts.start();
+		
+		sc.close();
 	}
+
 }
 
 
