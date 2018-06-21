@@ -37,7 +37,7 @@ public class ClienteGUI {
 			}
 		});
 	}
-	*/
+	
 	
 	/**
 	 * Create the application.
@@ -65,6 +65,12 @@ public class ClienteGUI {
 		mensajesChat.setFont(new Font("Tahoma", Font.PLAIN, 15));
 		mensajesChat.setBounds(12, 13, 970, 604);
 		//imprimirImagen("https://img-9gag-fun.9cache.com/photo/ajEK67p_460s.jpg");
+		
+		/**
+		 * PRUEBA DE IMAGENES
+		 */
+		
+		
 		
 		JScrollPane barraScroll = new JScrollPane(mensajesChat);
 		barraScroll.setBounds(12, 13, 970, 604);
@@ -118,12 +124,15 @@ public class ClienteGUI {
 	private ImageIcon getImagen(String link) {
 		ImageIcon img = null;
 		
-		try {
-			img = new ImageIcon(new URL(link));
-		} catch (MalformedURLException e) {
-			e.printStackTrace();
-		}
-		
+		if(link.contains("http") == true) {
+			try {
+				img = new ImageIcon(new URL(link));
+			} catch (MalformedURLException e) {
+				e.printStackTrace();
+			}
+		} else 
+			img = new ImageIcon(link);
+
 		return img;
 	}
 }
